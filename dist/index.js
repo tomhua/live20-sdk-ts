@@ -1,7 +1,7 @@
 // src/lib/zkfp-loader.ts
 import koffi from "koffi";
 import { join, dirname, basename } from "path";
-import { accessSync, constants, readdirSync, openSync, readSync, closeSync } from "fs";
+import { readdirSync, openSync, readSync, closeSync } from "fs";
 import { chdir } from "process";
 
 // src/types/zkfp-types.ts
@@ -10,79 +10,52 @@ var FP_THRESHOLD_CODE = 1;
 var FP_MTHRESHOLD_CODE = 2;
 
 // src/lib/zkfp-loader.ts
-function getDllBitness(dllPath) {
-  try {
-    const buffer = Buffer.alloc(1024);
-    const fd = openSync(dllPath, "r");
-    const bytesRead = readSync(fd, buffer, 0, 1024, 0);
-    closeSync(fd);
-    if (bytesRead < 64) {
-      this.logger.warn(`[ZKFPLoader] DLL \u6587\u4EF6\u592A\u5C0F\uFF0C\u65E0\u6CD5\u68C0\u67E5\u4F4D\u6570: ${dllPath}`);
-      return 0;
-    }
-    const peHeaderOffset = buffer.readUInt32LE(60);
-    if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
-      this.logger.warn(`[ZKFPLoader] \u65E0\u6548\u7684 PE \u5934\u504F\u79FB: ${peHeaderOffset}`);
-      return 0;
-    }
-    const machineType = buffer.readUInt16LE(peHeaderOffset + 4);
-    if (machineType === 34404) return 64;
-    if (machineType === 332) return 32;
-    return 0;
-  } catch (error) {
-    this.logger.warn(`[ZKFPLoader] \u68C0\u67E5 DLL \u4F4D\u6570\u5931\u8D25 ${dllPath}:`, error);
-    return 0;
-  }
-}
 var ZKFPLoader = class {
-  constructor(dllName, logger) {
+  constructor(logger) {
     this.lib = null;
     this.isInitialized = false;
     this.deviceHandle = null;
     this.dbCacheHandle = null;
     this.dllPaths = [];
     this.logger = logger || console;
-    this.dllPaths = this.resolveDllPaths(dllName);
+    this.dllPaths = this.resolveDllPaths();
+  }
+  /**
+   * 检查 DLL 文件的位数
+   * @param dllPath DLL 文件路径
+   * @returns 0: 未知, 32: 32位, 64: 64位
+   */
+  getDllBitness(dllPath) {
+    try {
+      const buffer = Buffer.alloc(1024);
+      const fd = openSync(dllPath, "r");
+      const bytesRead = readSync(fd, buffer, 0, 1024, 0);
+      closeSync(fd);
+      if (bytesRead < 64) {
+        this.logger.warn(`[ZKFPLoader] DLL \u6587\u4EF6\u592A\u5C0F\uFF0C\u65E0\u6CD5\u68C0\u67E5\u4F4D\u6570: ${dllPath}`);
+        return 0;
+      }
+      const peHeaderOffset = buffer.readUInt32LE(60);
+      if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
+        this.logger.warn(`[ZKFPLoader] \u65E0\u6548\u7684 PE \u5934\u504F\u79FB: ${peHeaderOffset}`);
+        return 0;
+      }
+      const machineType = buffer.readUInt16LE(peHeaderOffset + 4);
+      if (machineType === 34404) return 64;
+      if (machineType === 332) return 32;
+      return 0;
+    } catch (error) {
+      this.logger.warn(`[ZKFPLoader] \u68C0\u67E5 DLL \u4F4D\u6570\u5931\u8D25 ${dllPath}:`, error);
+      return 0;
+    }
   }
   /**
    * 解析 DLL 路径
    */
-  resolveDllPaths(mainDllName) {
+  resolveDllPaths() {
     const is64Bit = process.arch === "x64";
     this.logger.info(`[ZKFPLoader] Node.js \u67B6\u6784: ${process.arch}`);
     const paths = [];
-    if (mainDllName) {
-      if (mainDllName === "libzkfp.dll") {
-        const demoLibPath = join(process.cwd(), "demotest", "libzkfp.dll");
-        if (this.fileExists(demoLibPath)) {
-          const bitness = getDllBitness(demoLibPath);
-          if (is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
-            this.logger.info(`[ZKFPLoader] \u2705 \u4F7F\u7528 demotest \u76EE\u5F55\u4E0B\u7684 libzkfp.dll: ${demoLibPath} (${bitness}\u4F4D)`);
-            paths.push(demoLibPath);
-            return paths;
-          }
-        }
-      }
-      const dllDirs2 = [
-        join(process.cwd(), "src", "dll", "x64"),
-        join(process.cwd(), "src", "dll", "x86")
-      ];
-      for (const dllDir of dllDirs2) {
-        const dllPath = join(dllDir, mainDllName);
-        if (this.fileExists(dllPath)) {
-          const bitness = getDllBitness(dllPath);
-          if (bitness === 0 || is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
-            this.logger.info(`[ZKFPLoader] \u2705 \u627E\u5230\u6587\u4EF6: ${dllPath} (${bitness}\u4F4D)`);
-            paths.push(dllPath);
-            break;
-          }
-        }
-      }
-      if (paths.length === 0) {
-        this.logger.info(`[ZKFPLoader] \u274C \u672A\u627E\u5230\u5339\u914D\u67B6\u6784\u7684 ${mainDllName}`);
-      }
-      return paths;
-    }
     const dllDirs = [
       join(process.cwd(), "src", "dll", "x64"),
       join(process.cwd(), "src", "dll", "x86")
@@ -93,28 +66,17 @@ var ZKFPLoader = class {
     }
     const dllInfo = allDllFiles.map((dll) => ({
       path: dll,
-      bitness: getDllBitness(dll)
+      bitness: this.getDllBitness(dll)
     }));
     const matchingDlls = dllInfo.filter((info) => is64Bit && info.bitness === 64 || !is64Bit && info.bitness === 32).map((info) => info.path);
     const otherDlls = dllInfo.filter((info) => !matchingDlls.includes(info.path)).map((info) => info.path);
     paths.push(...matchingDlls, ...otherDlls);
     this.logger.info(`[ZKFPLoader] \u627E\u5230 ${paths.length} \u4E2A DLL \u6587\u4EF6...`);
     for (const dll of paths) {
-      const bitness = getDllBitness(dll);
+      const bitness = this.getDllBitness(dll);
       this.logger.info(`[ZKFPLoader] \u2705 \u6DFB\u52A0: ${dll} (${bitness}\u4F4D)`);
     }
     return paths;
-  }
-  /**
-   * 检查文件是否存在
-   */
-  fileExists(path) {
-    try {
-      accessSync(path, constants.R_OK);
-      return true;
-    } catch {
-      return false;
-    }
   }
   /**
    * 获取指定目录下所有的 DLL 文件
@@ -149,7 +111,7 @@ var ZKFPLoader = class {
       this.logger.info(`[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D ${this.dllPaths.length} \u4E2A DLL...`);
       for (const dllPath of this.dllPaths) {
         try {
-          const bitness = getDllBitness(dllPath);
+          const bitness = this.getDllBitness(dllPath);
           if (is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
             const dllDir = dirname(dllPath);
             const dllName = basename(dllPath);
@@ -346,21 +308,27 @@ var ZKFPLoader = class {
   /**
    * 采集指纹图像
    */
-  acquireFingerprintImage(bufferSize = 1024 * 1024) {
+  acquireFingerprintImage() {
     this.ensureDeviceOpened();
-    const imageBuffer = Buffer.alloc(bufferSize);
+    const params = this.getCaptureParams();
+    if (!params || params.imgWidth === 0 || params.imgHeight === 0) {
+      this.logger.warn("\u65E0\u6CD5\u83B7\u53D6\u91C7\u96C6\u53C2\u6570");
+      return null;
+    }
+    const requiredSize = params.imgWidth * params.imgHeight;
+    const imageBuffer = Buffer.alloc(requiredSize);
     const result = this.lib.ZKFPM_AcquireFingerprintImage(
       this.deviceHandle,
       imageBuffer,
-      bufferSize
+      requiredSize
     );
+    this.logger.info(`\u91C7\u96C6\u6307\u7EB9\u56FE\u50CF\u7ED3\u679C: ${result}`);
     if (result === 0 /* OK */) {
-      const params = this.getCaptureParams();
       return {
-        width: params?.imgWidth ?? 0,
-        height: params?.imgHeight ?? 0,
+        width: params.imgWidth,
+        height: params.imgHeight,
         data: new Uint8Array(imageBuffer),
-        dpi: params?.nDPI ?? 500
+        dpi: params.nDPI ?? 500
       };
     }
     return null;
@@ -379,16 +347,20 @@ var ZKFPLoader = class {
   createDBCache() {
     this.ensureInitialized();
     const handle = this.lib.ZKFPM_DBInit();
-    if (handle && handle !== null) {
-      this.dbCacheHandle = handle;
-      return true;
+    if (!handle) {
+      this.logger.error(`\u521D\u59CB\u5316\u6570\u636E\u5E93\u7F13\u5B58\u53E5\u67C4\u5931\u8D25`);
+      return false;
     }
+    this.logger.info(`\u521D\u59CB\u5316\u6570\u636E\u5E93\u7F13\u5B58\u53E5\u67C4`);
+    this.dbCacheHandle = handle;
     const createHandle = this.lib.ZKFPM_CreateDBCache();
-    if (createHandle && createHandle !== null) {
-      this.dbCacheHandle = createHandle;
-      return true;
+    if (!createHandle) {
+      this.logger.error(`\u521B\u5EFA\u6570\u636E\u5E93\u7F13\u5B58\u53E5\u67C4\u5931\u8D25`);
+      return false;
     }
-    return false;
+    this.logger.info(`\u521B\u5EFA\u6570\u636E\u5E93\u7F13\u5B58\u53E5\u67C4`);
+    this.dbCacheHandle = createHandle;
+    return true;
   }
   /**
    * 关闭数据库缓存
@@ -699,16 +671,16 @@ var ZKFPLoader = class {
     }
   }
 };
-function createZKFPLoader(dllName, logger) {
-  return new ZKFPLoader(dllName, logger);
+function createZKFPLoader(logger) {
+  return new ZKFPLoader(logger);
 }
 
 // src/index.ts
 var Live20SDK = class {
-  constructor(dllName, logger) {
+  constructor(logger) {
     this.isInitialized = false;
     this.logger = logger || console;
-    this.loader = createZKFPLoader(dllName, this.logger);
+    this.loader = createZKFPLoader(this.logger);
   }
   /**
    * 初始化指纹识别库
@@ -769,9 +741,9 @@ var Live20SDK = class {
   /**
    * 采集指纹图像
    */
-  acquireFingerprintImage(bufferSize) {
+  acquireFingerprintImage() {
     this.ensureInitialized();
-    return this.loader.acquireFingerprintImage(bufferSize);
+    return this.loader.acquireFingerprintImage();
   }
   /**
    * 创建数据库
@@ -915,8 +887,8 @@ var Live20SDK = class {
     }
   }
 };
-function createLive20SDK(dllName, logger) {
-  return new Live20SDK(dllName, logger);
+function createLive20SDK(logger) {
+  return new Live20SDK(logger);
 }
 var index_default = createLive20SDK;
 export {

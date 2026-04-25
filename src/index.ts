@@ -20,9 +20,9 @@ export class Live20SDK {
     private isInitialized = false;
     private logger: Logger;
 
-    constructor(dllName?: string, logger?: Logger) {
+    constructor(logger?: Logger) {
         this.logger = logger || console;
-        this.loader = createZKFPLoader(dllName, this.logger);
+        this.loader = createZKFPLoader(this.logger);
     }
 
     /**
@@ -93,9 +93,9 @@ export class Live20SDK {
     /**
      * 采集指纹图像
      */
-    public acquireFingerprintImage(bufferSize?: number): ZKFPImageData | null {
+    public acquireFingerprintImage(): ZKFPImageData | null {
         this.ensureInitialized();
-        return this.loader.acquireFingerprintImage(bufferSize);
+        return this.loader.acquireFingerprintImage();
     }
 
     /**
@@ -271,8 +271,8 @@ export class Live20SDK {
 /**
  * 创建指纹识别 SDK 实例
  */
-export function createLive20SDK(dllName?: string, logger?: Logger): Live20SDK {
-    return new Live20SDK(dllName, logger);
+export function createLive20SDK(logger?: Logger): Live20SDK {
+    return new Live20SDK(logger);
 }
 
 /**

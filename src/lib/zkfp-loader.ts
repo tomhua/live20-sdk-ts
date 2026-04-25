@@ -15,43 +15,6 @@ import {
     Logger
 } from '../types/zkfp-types'
 
-/**
- * 检查 DLL 文件的位数
- * @param dllPath DLL 文件路径
- * @returns 0: 未知, 32: 32位, 64: 64位
- */
-function getDllBitness(dllPath: string): number {
-    try {
-        const buffer = Buffer.alloc(1024); // 增加缓冲区大小
-        const fd = openSync(dllPath, 'r');
-        const bytesRead = readSync(fd, buffer, 0, 1024, 0);
-        closeSync(fd);
-
-        if (bytesRead < 64) {
-            this.logger.warn(`[ZKFPLoader] DLL 文件太小，无法检查位数: ${dllPath}`);
-            return 0;
-        }
-
-        // DOS 头的 e_lfanew 字段（偏移 0x3C）指向 PE 头
-        const peHeaderOffset = buffer.readUInt32LE(0x3C);
-        if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
-            this.logger.warn(`[ZKFPLoader] 无效的 PE 头偏移: ${peHeaderOffset}`);
-            return 0;
-        }
-
-        // PE 头的机器类型字段（偏移 0x4）
-        const machineType = buffer.readUInt16LE(peHeaderOffset + 4);
-
-        // 0x8664 = AMD64 (64位), 0x14C = Intel 386 (32位)
-        if (machineType === 0x8664) return 64;
-        if (machineType === 0x14C) return 32;
-
-        return 0;
-    } catch (error) {
-        this.logger.warn(`[ZKFPLoader] 检查 DLL 位数失败 ${dllPath}:`, error);
-        return 0;
-    }
-}
 
 /**
  * 指纹识别 DLL 加载器
@@ -66,57 +29,57 @@ export class ZKFPLoader {
 
     private readonly dllPaths: string[] = [];
 
-    constructor(dllName?: string, logger?: Logger) {
+    constructor(logger?: Logger) {
         this.logger = logger || console;
-        this.dllPaths = this.resolveDllPaths(dllName);
+        this.dllPaths = this.resolveDllPaths();
+    }
+
+    /**
+     * 检查 DLL 文件的位数
+     * @param dllPath DLL 文件路径
+     * @returns 0: 未知, 32: 32位, 64: 64位
+     */
+    private getDllBitness(dllPath: string): number {
+        try {
+            const buffer = Buffer.alloc(1024); // 增加缓冲区大小
+            const fd = openSync(dllPath, 'r');
+            const bytesRead = readSync(fd, buffer, 0, 1024, 0);
+            closeSync(fd);
+
+            if (bytesRead < 64) {
+                this.logger.warn(`[ZKFPLoader] DLL 文件太小，无法检查位数: ${dllPath}`);
+                return 0;
+            }
+
+            // DOS 头的 e_lfanew 字段（偏移 0x3C）指向 PE 头
+            const peHeaderOffset = buffer.readUInt32LE(0x3C);
+            if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
+                this.logger.warn(`[ZKFPLoader] 无效的 PE 头偏移: ${peHeaderOffset}`);
+                return 0;
+            }
+
+            // PE 头的机器类型字段（偏移 0x4）
+            const machineType = buffer.readUInt16LE(peHeaderOffset + 4);
+
+            // 0x8664 = AMD64 (64位), 0x14C = Intel 386 (32位)
+            if (machineType === 0x8664) return 64;
+            if (machineType === 0x14C) return 32;
+
+            return 0;
+        } catch (error) {
+            this.logger.warn(`[ZKFPLoader] 检查 DLL 位数失败 ${dllPath}:`, error);
+            return 0;
+        }
     }
 
     /**
      * 解析 DLL 路径
      */
-    private resolveDllPaths(mainDllName?: string): string[] {
+    private resolveDllPaths(): string[] {
         const is64Bit = process.arch === 'x64';
         this.logger.info(`[ZKFPLoader] Node.js 架构: ${process.arch}`);
 
         const paths: string[] = [];
-
-        if (mainDllName) {
-            // 优先使用 demotest 目录下的 libzkfp.dll（如果存在且位数匹配）
-            if (mainDllName === 'libzkfp.dll') {
-                const demoLibPath = join(process.cwd(), 'demotest', 'libzkfp.dll');
-                if (this.fileExists(demoLibPath)) {
-                    const bitness = getDllBitness(demoLibPath);
-                    if ((is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
-                        this.logger.info(`[ZKFPLoader] ✅ 使用 demotest 目录下的 libzkfp.dll: ${demoLibPath} (${bitness}位)`);
-                        paths.push(demoLibPath);
-                        return paths;
-                    }
-                }
-            }
-
-            // 尝试在 x64 和 x86 目录中寻找匹配架构的 DLL
-            const dllDirs = [
-                join(process.cwd(), 'src', 'dll', 'x64'),
-                join(process.cwd(), 'src', 'dll', 'x86')
-            ];
-
-            for (const dllDir of dllDirs) {
-                const dllPath = join(dllDir, mainDllName);
-                if (this.fileExists(dllPath)) {
-                    const bitness = getDllBitness(dllPath);
-                    if (bitness === 0 || (is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
-                        this.logger.info(`[ZKFPLoader] ✅ 找到文件: ${dllPath} (${bitness}位)`);
-                        paths.push(dllPath);
-                        break;
-                    }
-                }
-            }
-
-            if (paths.length === 0) {
-                this.logger.info(`[ZKFPLoader] ❌ 未找到匹配架构的 ${mainDllName}`);
-            }
-            return paths;
-        }
 
         // 扫描所有 DLL 目录
         const dllDirs = [
@@ -132,7 +95,7 @@ export class ZKFPLoader {
         // 检查每个 DLL 文件的位数
         const dllInfo = allDllFiles.map(dll => ({
             path: dll,
-            bitness: getDllBitness(dll)
+            bitness: this.getDllBitness(dll)
         }));
 
         // 优先加载与系统架构匹配的 DLL
@@ -150,23 +113,11 @@ export class ZKFPLoader {
 
         this.logger.info(`[ZKFPLoader] 找到 ${paths.length} 个 DLL 文件...`);
         for (const dll of paths) {
-            const bitness = getDllBitness(dll);
+            const bitness = this.getDllBitness(dll);
             this.logger.info(`[ZKFPLoader] ✅ 添加: ${dll} (${bitness}位)`);
         }
 
         return paths;
-    }
-
-    /**
-     * 检查文件是否存在
-     */
-    private fileExists(path: string): boolean {
-        try {
-            accessSync(path, constants.R_OK);
-            return true;
-        } catch {
-            return false;
-        }
     }
 
     /**
@@ -207,7 +158,7 @@ export class ZKFPLoader {
 
             for (const dllPath of this.dllPaths) {
                 try {
-                    const bitness = getDllBitness(dllPath);
+                    const bitness = this.getDllBitness(dllPath);
                     // 只加载与系统架构匹配的 DLL
                     if ((is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
                         const dllDir = dirname(dllPath);
@@ -444,21 +395,30 @@ export class ZKFPLoader {
     /**
      * 采集指纹图像
      */
-    public acquireFingerprintImage(bufferSize: number = 1024 * 1024): ZKFPImageData | null {
+    public acquireFingerprintImage(): ZKFPImageData | null {
         this.ensureDeviceOpened();
-        const imageBuffer = Buffer.alloc(bufferSize);
+
+        const params = this.getCaptureParams();
+        if (!params || params.imgWidth === 0 || params.imgHeight === 0) {
+            this.logger.warn('无法获取采集参数');
+            return null;
+        }
+
+        const requiredSize = params.imgWidth * params.imgHeight;
+        const imageBuffer = Buffer.alloc(requiredSize);
+
         const result = this.lib.ZKFPM_AcquireFingerprintImage(
             this.deviceHandle,
             imageBuffer,
-            bufferSize
+            requiredSize
         );
+        this.logger.info(`采集指纹图像结果: ${result}`);
         if (result === ZKFPErrorCode.OK) {
-            const params = this.getCaptureParams();
             return {
-                width: params?.imgWidth ?? 0,
-                height: params?.imgHeight ?? 0,
+                width: params.imgWidth,
+                height: params.imgHeight,
                 data: new Uint8Array(imageBuffer),
-                dpi: params?.nDPI ?? 500
+                dpi: params.nDPI ?? 500
             };
         }
         return null;
@@ -481,19 +441,23 @@ export class ZKFPLoader {
 
         // 优先使用 ZKFPM_DBInit() 方法（与 C# 代码一致）
         const handle = this.lib.ZKFPM_DBInit();
-        if (handle && handle !== null) {
-            this.dbCacheHandle = handle;
-            return true;
+        if (!handle) {
+            this.logger.error(`初始化数据库缓存句柄失败`);
+            return false;
         }
+        this.logger.info(`初始化数据库缓存句柄`);
+        this.dbCacheHandle = handle;
 
         // 如果 ZKFPM_DBInit() 失败，尝试使用 ZKFPM_CreateDBCache()
         const createHandle = this.lib.ZKFPM_CreateDBCache();
-        if (createHandle && createHandle !== null) {
-            this.dbCacheHandle = createHandle;
-            return true;
+        if (!createHandle) {
+            this.logger.error(`创建数据库缓存句柄失败`);
+            return false;
         }
+        this.logger.info(`创建数据库缓存句柄`);
+        this.dbCacheHandle = createHandle;
 
-        return false;
+        return true;
     }
 
     /**
@@ -852,6 +816,6 @@ export class ZKFPLoader {
 /**
  * 创建 ZKFPLoader 实例
  */
-export function createZKFPLoader(dllName?: string, logger?: Logger): ZKFPLoader {
-    return new ZKFPLoader(dllName, logger);
+export function createZKFPLoader(logger?: Logger): ZKFPLoader {
+    return new ZKFPLoader(logger);
 }

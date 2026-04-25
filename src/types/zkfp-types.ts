@@ -9,7 +9,7 @@
  * 指纹识别句柄类型
  * 用于表示设备或数据库缓存的句柄
  */
-export type ZKFPHandle = number;
+export type ZKFPHandle = any;
 
 /**
  * 指纹模板数据结构

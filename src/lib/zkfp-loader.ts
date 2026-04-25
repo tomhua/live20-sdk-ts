@@ -59,8 +59,8 @@ function getDllBitness(dllPath: string): number {
 export class ZKFPLoader {
     private lib: any = null;
     private isInitialized = false;
-    private deviceHandle: ZKFPHandle = 0;
-    private dbCacheHandle: ZKFPHandle = 0;
+    private deviceHandle: ZKFPHandle = null;
+    private dbCacheHandle: ZKFPHandle = null;
 
     private readonly dllPaths: string[] = [];
 
@@ -354,7 +354,7 @@ export class ZKFPLoader {
 
         const handle = this.lib.ZKFPM_OpenDevice(deviceIndex);
         if (handle && handle !== null) {
-            this.deviceHandle = Number(koffi.address(handle));
+            this.deviceHandle = handle;
             return true;
         }
         return false;
@@ -364,10 +364,13 @@ export class ZKFPLoader {
      * 关闭设备
      */
     public closeDevice(): boolean {
-        if (this.deviceHandle > 0) {
-            const result = this.lib.ZKFPM_CloseDevice(this.deviceHandle);
-            this.deviceHandle = 0;
-            return result === ZKFPErrorCode.OK;
+        if (this.deviceHandle) {
+            try {
+                const result = this.lib.ZKFPM_CloseDevice(this.deviceHandle);
+                return result === ZKFPErrorCode.OK;
+            } finally {
+                this.deviceHandle = null;
+            }
         }
         return true;
     }
@@ -476,14 +479,14 @@ export class ZKFPLoader {
         // 优先使用 ZKFPM_DBInit() 方法（与 C# 代码一致）
         const handle = this.lib.ZKFPM_DBInit();
         if (handle && handle !== null) {
-            this.dbCacheHandle = Number(koffi.address(handle));
+            this.dbCacheHandle = handle;
             return true;
         }
 
         // 如果 ZKFPM_DBInit() 失败，尝试使用 ZKFPM_CreateDBCache()
         const createHandle = this.lib.ZKFPM_CreateDBCache();
         if (createHandle && createHandle !== null) {
-            this.dbCacheHandle = Number(koffi.address(createHandle));
+            this.dbCacheHandle = createHandle;
             return true;
         }
 
@@ -494,10 +497,13 @@ export class ZKFPLoader {
      * 关闭数据库缓存
      */
     public closeDBCache(): boolean {
-        if (this.dbCacheHandle > 0) {
-            const result = this.lib.ZKFPM_CloseDBCache(this.dbCacheHandle);
-            this.dbCacheHandle = 0;
-            return result === ZKFPErrorCode.OK;
+        if (this.dbCacheHandle) {
+            try {
+                const result = this.lib.ZKFPM_CloseDBCache(this.dbCacheHandle);
+                return result === ZKFPErrorCode.OK;
+            } finally {
+                this.dbCacheHandle = null;
+            }
         }
         return true;
     }
@@ -757,30 +763,56 @@ export class ZKFPLoader {
      * 清理资源
      */
     public terminate(): void {
-        if (this.dbCacheHandle > 0) {
-            const ret = Boolean(this.closeDBCache());
-            if (ret) {
-                console.log('数据库已关闭', ret);
-            }
-        }
+        try {
+            console.log('开始清理资源...');
 
-        if (this.deviceHandle > 0) {
-            const ret = Boolean(this.closeDevice());
-            if (ret) {
-                console.log('设备已关闭', ret);
+            // 关闭数据库
+            if (this.dbCacheHandle) {
+                console.log('关闭数据库...');
+                try {
+                    const ret = this.closeDBCache();
+                    console.log(`数据库关闭结果: ${ret}`);
+                } catch (error) {
+                    console.error('关闭数据库失败:', error);
+                }
             }
-        }
-        console.log('所有资源已清理', this.isInitialized);
-        if (this.isInitialized) {
-            console.log('指纹识别库已初始化');
-            const ret = Boolean(this.lib.ZKFPM_Terminate());
-            if (ret) {
-                console.log('指纹识别库已清理', ret);
+
+            // 关闭设备
+            if (this.deviceHandle) {
+                console.log('关闭设备...');
+                try {
+                    const ret = this.closeDevice();
+                    console.log(`设备关闭结果: ${ret}`);
+                } catch (error) {
+                    console.error('关闭设备失败:', error);
+                }
             }
-            this.isInitialized = false;
-            this.lib.ZKFPM_Terminate();
-            this.isInitialized = false;
-            console.log('指纹识别库已清理');
+
+            // 清理库
+            if (this.isInitialized && this.lib) {
+                console.log('清理指纹识别库...');
+                try {
+                    if (typeof this.lib.ZKFPM_Terminate === 'function') {
+                        const ret = this.lib.ZKFPM_Terminate();
+                        console.log(`ZKFPM_Terminate() 返回: ${ret}`);
+                        if (ret === ZKFPErrorCode.OK) {
+                            console.log('指纹识别库已清理');
+                        } else {
+                            console.warn(`指纹识别库清理失败，错误码: ${ret}`);
+                        }
+                    } else {
+                        console.warn('ZKFPM_Terminate 函数未绑定');
+                    }
+                } catch (error) {
+                    console.error('调用 ZKFPM_Terminate 失败:', error);
+                } finally {
+                    this.isInitialized = false;
+                }
+            }
+
+            console.log('所有资源清理完成');
+        } catch (error) {
+            console.error('清理资源时发生错误:', error);
         }
     }
 
@@ -798,7 +830,7 @@ export class ZKFPLoader {
      */
     private ensureDeviceOpened(): void {
         this.ensureInitialized();
-        if (this.deviceHandle === 0) {
+        if (!this.deviceHandle) {
             throw new Error('设备未打开，请先调用 openDevice() 方法');
         }
     }
@@ -808,7 +840,7 @@ export class ZKFPLoader {
      */
     private ensureDBCacheCreated(): void {
         this.ensureInitialized();
-        if (this.dbCacheHandle === 0) {
+        if (!this.dbCacheHandle) {
             throw new Error('数据库未创建，请先调用 createDBCache() 方法');
         }
     }

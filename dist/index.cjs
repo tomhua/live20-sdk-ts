@@ -79,8 +79,8 @@ var ZKFPLoader = class {
   constructor(dllName) {
     this.lib = null;
     this.isInitialized = false;
-    this.deviceHandle = 0;
-    this.dbCacheHandle = 0;
+    this.deviceHandle = null;
+    this.dbCacheHandle = null;
     this.dllPaths = [];
     this.dllPaths = this.resolveDllPaths(dllName);
   }
@@ -307,7 +307,7 @@ var ZKFPLoader = class {
     this.ensureInitialized();
     const handle = this.lib.ZKFPM_OpenDevice(deviceIndex);
     if (handle && handle !== null) {
-      this.deviceHandle = Number(import_koffi.default.address(handle));
+      this.deviceHandle = handle;
       return true;
     }
     return false;
@@ -316,10 +316,13 @@ var ZKFPLoader = class {
    * 关闭设备
    */
   closeDevice() {
-    if (this.deviceHandle > 0) {
-      const result = this.lib.ZKFPM_CloseDevice(this.deviceHandle);
-      this.deviceHandle = 0;
-      return result === 0 /* OK */;
+    if (this.deviceHandle) {
+      try {
+        const result = this.lib.ZKFPM_CloseDevice(this.deviceHandle);
+        return result === 0 /* OK */;
+      } finally {
+        this.deviceHandle = null;
+      }
     }
     return true;
   }
@@ -417,12 +420,12 @@ var ZKFPLoader = class {
     this.ensureInitialized();
     const handle = this.lib.ZKFPM_DBInit();
     if (handle && handle !== null) {
-      this.dbCacheHandle = Number(import_koffi.default.address(handle));
+      this.dbCacheHandle = handle;
       return true;
     }
     const createHandle = this.lib.ZKFPM_CreateDBCache();
     if (createHandle && createHandle !== null) {
-      this.dbCacheHandle = Number(import_koffi.default.address(createHandle));
+      this.dbCacheHandle = createHandle;
       return true;
     }
     return false;
@@ -431,10 +434,13 @@ var ZKFPLoader = class {
    * 关闭数据库缓存
    */
   closeDBCache() {
-    if (this.dbCacheHandle > 0) {
-      const result = this.lib.ZKFPM_CloseDBCache(this.dbCacheHandle);
-      this.dbCacheHandle = 0;
-      return result === 0 /* OK */;
+    if (this.dbCacheHandle) {
+      try {
+        const result = this.lib.ZKFPM_CloseDBCache(this.dbCacheHandle);
+        return result === 0 /* OK */;
+      } finally {
+        this.dbCacheHandle = null;
+      }
     }
     return true;
   }
@@ -661,29 +667,49 @@ var ZKFPLoader = class {
    * 清理资源
    */
   terminate() {
-    if (this.dbCacheHandle > 0) {
-      const ret = Boolean(this.closeDBCache());
-      if (ret) {
-        console.log("\u6570\u636E\u5E93\u5DF2\u5173\u95ED", ret);
+    try {
+      console.log("\u5F00\u59CB\u6E05\u7406\u8D44\u6E90...");
+      if (this.dbCacheHandle) {
+        console.log("\u5173\u95ED\u6570\u636E\u5E93...");
+        try {
+          const ret = this.closeDBCache();
+          console.log(`\u6570\u636E\u5E93\u5173\u95ED\u7ED3\u679C: ${ret}`);
+        } catch (error) {
+          console.error("\u5173\u95ED\u6570\u636E\u5E93\u5931\u8D25:", error);
+        }
       }
-    }
-    if (this.deviceHandle > 0) {
-      const ret = Boolean(this.closeDevice());
-      if (ret) {
-        console.log("\u8BBE\u5907\u5DF2\u5173\u95ED", ret);
+      if (this.deviceHandle) {
+        console.log("\u5173\u95ED\u8BBE\u5907...");
+        try {
+          const ret = this.closeDevice();
+          console.log(`\u8BBE\u5907\u5173\u95ED\u7ED3\u679C: ${ret}`);
+        } catch (error) {
+          console.error("\u5173\u95ED\u8BBE\u5907\u5931\u8D25:", error);
+        }
       }
-    }
-    console.log("\u6240\u6709\u8D44\u6E90\u5DF2\u6E05\u7406", this.isInitialized);
-    if (this.isInitialized) {
-      console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u521D\u59CB\u5316");
-      const ret = Boolean(this.lib.ZKFPM_Terminate());
-      if (ret) {
-        console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u6E05\u7406", ret);
+      if (this.isInitialized && this.lib) {
+        console.log("\u6E05\u7406\u6307\u7EB9\u8BC6\u522B\u5E93...");
+        try {
+          if (typeof this.lib.ZKFPM_Terminate === "function") {
+            const ret = this.lib.ZKFPM_Terminate();
+            console.log(`ZKFPM_Terminate() \u8FD4\u56DE: ${ret}`);
+            if (ret === 0 /* OK */) {
+              console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u6E05\u7406");
+            } else {
+              console.warn(`\u6307\u7EB9\u8BC6\u522B\u5E93\u6E05\u7406\u5931\u8D25\uFF0C\u9519\u8BEF\u7801: ${ret}`);
+            }
+          } else {
+            console.warn("ZKFPM_Terminate \u51FD\u6570\u672A\u7ED1\u5B9A");
+          }
+        } catch (error) {
+          console.error("\u8C03\u7528 ZKFPM_Terminate \u5931\u8D25:", error);
+        } finally {
+          this.isInitialized = false;
+        }
       }
-      this.isInitialized = false;
-      this.lib.ZKFPM_Terminate();
-      this.isInitialized = false;
-      console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u6E05\u7406");
+      console.log("\u6240\u6709\u8D44\u6E90\u6E05\u7406\u5B8C\u6210");
+    } catch (error) {
+      console.error("\u6E05\u7406\u8D44\u6E90\u65F6\u53D1\u751F\u9519\u8BEF:", error);
     }
   }
   /**
@@ -699,7 +725,7 @@ var ZKFPLoader = class {
    */
   ensureDeviceOpened() {
     this.ensureInitialized();
-    if (this.deviceHandle === 0) {
+    if (!this.deviceHandle) {
       throw new Error("\u8BBE\u5907\u672A\u6253\u5F00\uFF0C\u8BF7\u5148\u8C03\u7528 openDevice() \u65B9\u6CD5");
     }
   }
@@ -708,7 +734,7 @@ var ZKFPLoader = class {
    */
   ensureDBCacheCreated() {
     this.ensureInitialized();
-    if (this.dbCacheHandle === 0) {
+    if (!this.dbCacheHandle) {
       throw new Error("\u6570\u636E\u5E93\u672A\u521B\u5EFA\uFF0C\u8BF7\u5148\u8C03\u7528 createDBCache() \u65B9\u6CD5");
     }
   }

@@ -11,7 +11,8 @@ import {
     ZKFPCapParams,
     ZKFPDBParamCode,
     ZKFPDeviceParam,
-    MAX_TEMPLATE_SIZE
+    MAX_TEMPLATE_SIZE,
+    Logger
 } from '../types/zkfp-types'
 
 /**
@@ -27,14 +28,14 @@ function getDllBitness(dllPath: string): number {
         closeSync(fd);
 
         if (bytesRead < 64) {
-            console.warn(`[ZKFPLoader] DLL 文件太小，无法检查位数: ${dllPath}`);
+            this.logger.warn(`[ZKFPLoader] DLL 文件太小，无法检查位数: ${dllPath}`);
             return 0;
         }
 
         // DOS 头的 e_lfanew 字段（偏移 0x3C）指向 PE 头
         const peHeaderOffset = buffer.readUInt32LE(0x3C);
         if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
-            console.warn(`[ZKFPLoader] 无效的 PE 头偏移: ${peHeaderOffset}`);
+            this.logger.warn(`[ZKFPLoader] 无效的 PE 头偏移: ${peHeaderOffset}`);
             return 0;
         }
 
@@ -47,7 +48,7 @@ function getDllBitness(dllPath: string): number {
 
         return 0;
     } catch (error) {
-        console.warn(`[ZKFPLoader] 检查 DLL 位数失败 ${dllPath}:`, error);
+        this.logger.warn(`[ZKFPLoader] 检查 DLL 位数失败 ${dllPath}:`, error);
         return 0;
     }
 }
@@ -61,10 +62,12 @@ export class ZKFPLoader {
     private isInitialized = false;
     private deviceHandle: ZKFPHandle = null;
     private dbCacheHandle: ZKFPHandle = null;
+    private logger: Logger;
 
     private readonly dllPaths: string[] = [];
 
-    constructor(dllName?: string) {
+    constructor(dllName?: string, logger?: Logger) {
+        this.logger = logger || console;
         this.dllPaths = this.resolveDllPaths(dllName);
     }
 
@@ -73,7 +76,7 @@ export class ZKFPLoader {
      */
     private resolveDllPaths(mainDllName?: string): string[] {
         const is64Bit = process.arch === 'x64';
-        console.log(`[ZKFPLoader] Node.js 架构: ${process.arch}`);
+        this.logger.info(`[ZKFPLoader] Node.js 架构: ${process.arch}`);
 
         const paths: string[] = [];
 
@@ -84,7 +87,7 @@ export class ZKFPLoader {
                 if (this.fileExists(demoLibPath)) {
                     const bitness = getDllBitness(demoLibPath);
                     if ((is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
-                        console.log(`[ZKFPLoader] ✅ 使用 demotest 目录下的 libzkfp.dll: ${demoLibPath} (${bitness}位)`);
+                        this.logger.info(`[ZKFPLoader] ✅ 使用 demotest 目录下的 libzkfp.dll: ${demoLibPath} (${bitness}位)`);
                         paths.push(demoLibPath);
                         return paths;
                     }
@@ -102,7 +105,7 @@ export class ZKFPLoader {
                 if (this.fileExists(dllPath)) {
                     const bitness = getDllBitness(dllPath);
                     if (bitness === 0 || (is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
-                        console.log(`[ZKFPLoader] ✅ 找到文件: ${dllPath} (${bitness}位)`);
+                        this.logger.info(`[ZKFPLoader] ✅ 找到文件: ${dllPath} (${bitness}位)`);
                         paths.push(dllPath);
                         break;
                     }
@@ -110,7 +113,7 @@ export class ZKFPLoader {
             }
 
             if (paths.length === 0) {
-                console.log(`[ZKFPLoader] ❌ 未找到匹配架构的 ${mainDllName}`);
+                this.logger.info(`[ZKFPLoader] ❌ 未找到匹配架构的 ${mainDllName}`);
             }
             return paths;
         }
@@ -145,10 +148,10 @@ export class ZKFPLoader {
         // 优先添加匹配架构的 DLL
         paths.push(...matchingDlls, ...otherDlls);
 
-        console.log(`[ZKFPLoader] 找到 ${paths.length} 个 DLL 文件...`);
+        this.logger.info(`[ZKFPLoader] 找到 ${paths.length} 个 DLL 文件...`);
         for (const dll of paths) {
             const bitness = getDllBitness(dll);
-            console.log(`[ZKFPLoader] ✅ 添加: ${dll} (${bitness}位)`);
+            this.logger.info(`[ZKFPLoader] ✅ 添加: ${dll} (${bitness}位)`);
         }
 
         return paths;
@@ -179,7 +182,7 @@ export class ZKFPLoader {
                 }
             }
         } catch (err) {
-            console.warn(`[ZKFPLoader] ⚠️ 无法读取目录 ${dir}:`, err);
+            this.logger.warn(`[ZKFPLoader] ⚠️ 无法读取目录 ${dir}:`, err);
         }
         return dllFiles;
     }
@@ -196,11 +199,11 @@ export class ZKFPLoader {
 
         try {
             if (this.dllPaths.length === 0) {
-                console.warn('未找到任何 DLL 文件，将尝试使用系统路径加载');
+                this.logger.warn('未找到任何 DLL 文件，将尝试使用系统路径加载');
             }
 
             const is64Bit = process.arch === 'x64';
-            console.log(`[ZKFPLoader] 尝试加载 ${this.dllPaths.length} 个 DLL...`);
+            this.logger.info(`[ZKFPLoader] 尝试加载 ${this.dllPaths.length} 个 DLL...`);
 
             for (const dllPath of this.dllPaths) {
                 try {
@@ -209,28 +212,28 @@ export class ZKFPLoader {
                     if ((is64Bit && bitness === 64) || (!is64Bit && bitness === 32)) {
                         const dllDir = dirname(dllPath);
                         const dllName = basename(dllPath);
-                        console.log(`[ZKFPLoader] 切换到 DLL 目录: ${dllDir}`);
+                        this.logger.info(`[ZKFPLoader] 切换到 DLL 目录: ${dllDir}`);
                         chdir(dllDir);
 
-                        console.log(`[ZKFPLoader] 尝试加载: ${dllName} (${bitness}位)`);
+                        this.logger.info(`[ZKFPLoader] 尝试加载: ${dllName} (${bitness}位)`);
                         const lib = koffi.load(dllName);
-                        console.log(`[ZKFPLoader] ✅ 成功加载: ${dllName} (${bitness}位)`);
+                        this.logger.info(`[ZKFPLoader] ✅ 成功加载: ${dllName} (${bitness}位)`);
                         if (!this.lib) {
                             this.lib = lib;
                         }
 
                         chdir(originalCwd);
                     } else {
-                        console.log(`[ZKFPLoader] ⚠️ 跳过加载: ${dllPath} (${bitness}位，与系统架构不匹配)`);
+                        this.logger.info(`[ZKFPLoader] ⚠️ 跳过加载: ${dllPath} (${bitness}位，与系统架构不匹配)`);
                     }
                 } catch (err) {
-                    console.warn(`[ZKFPLoader] ⚠️ 加载失败 ${dllPath}:`, err);
+                    this.logger.warn(`[ZKFPLoader] ⚠️ 加载失败 ${dllPath}:`, err);
                     chdir(originalCwd);
                 }
             }
 
             if (!this.lib) {
-                console.log('[ZKFPLoader] 尝试加载默认名称: zkfinger12.dll');
+                this.logger.info('[ZKFPLoader] 尝试加载默认名称: zkfinger12.dll');
                 try {
                     chdir(join(process.cwd(), 'src', 'dll', is64Bit ? 'x64' : 'x86'));
                     this.lib = koffi.load('zkfinger12.dll');
@@ -241,33 +244,33 @@ export class ZKFPLoader {
                 }
             }
 
-            console.log('[ZKFPLoader] DLL 加载完成，开始绑定函数...');
+            this.logger.info('[ZKFPLoader] DLL 加载完成，开始绑定函数...');
             this.bindFunctions();
 
-            console.log('[ZKFPLoader] 调用 ZKFPM_Init...');
+            this.logger.info('[ZKFPLoader] 调用 ZKFPM_Init...');
 
             try {
                 const result = this.lib.ZKFPM_Init();
 
                 if (result === ZKFPErrorCode.OK) {
                     this.isInitialized = true;
-                    console.log('指纹识别库初始化成功');
+                    this.logger.info('指纹识别库初始化成功');
                     return true;
                 } else {
-                    console.warn(`[ZKFPLoader] 初始化失败，错误码: ${result}，但继续执行`);
+                    this.logger.warn(`[ZKFPLoader] 初始化失败，错误码: ${result}，但继续执行`);
                     // 即使初始化失败，也将 isInitialized 设置为 true，以便后续操作可以执行
                     this.isInitialized = true;
                     return true;
                 }
             } catch (error) {
-                console.warn('[ZKFPLoader] 初始化过程中发生错误:', error, '，但继续执行');
+                this.logger.warn('[ZKFPLoader] 初始化过程中发生错误:', error, '，但继续执行');
                 // 即使发生错误，也将 isInitialized 设置为 true，以便后续操作可以执行
                 this.isInitialized = true;
                 return true;
             }
 
         } catch (error) {
-            console.error('指纹识别库初始化失败:', error);
+            this.logger.error('指纹识别库初始化失败:', error);
             return false;
         }
     }
@@ -333,7 +336,7 @@ export class ZKFPLoader {
             this.lib.ZKFPM_GetCaptureParams = this.lib.func('int __stdcall ZKFPM_GetCaptureParams(void*, void*)');
             this.lib.ZKFPM_GetCaptureParamsEx = this.lib.func('int __stdcall ZKFPM_GetCaptureParamsEx(void*, int*, int*, int*)');
         } catch (err) {
-            console.error('绑定函数失败:', err);
+            this.logger.error('绑定函数失败:', err);
             throw err;
         }
     }
@@ -764,55 +767,55 @@ export class ZKFPLoader {
      */
     public terminate(): void {
         try {
-            console.log('开始清理资源...');
+            this.logger.info('开始清理资源...');
 
             // 关闭数据库
             if (this.dbCacheHandle) {
-                console.log('关闭数据库...');
+                this.logger.info('关闭数据库...');
                 try {
                     const ret = this.closeDBCache();
-                    console.log(`数据库关闭结果: ${ret}`);
+                    this.logger.info(`数据库关闭结果: ${ret}`);
                 } catch (error) {
-                    console.error('关闭数据库失败:', error);
+                    this.logger.error('关闭数据库失败:', error);
                 }
             }
 
             // 关闭设备
             if (this.deviceHandle) {
-                console.log('关闭设备...');
+                this.logger.info('关闭设备...');
                 try {
                     const ret = this.closeDevice();
-                    console.log(`设备关闭结果: ${ret}`);
+                    this.logger.info(`设备关闭结果: ${ret}`);
                 } catch (error) {
-                    console.error('关闭设备失败:', error);
+                    this.logger.error('关闭设备失败:', error);
                 }
             }
 
             // 清理库
             if (this.isInitialized && this.lib) {
-                console.log('清理指纹识别库...');
+                this.logger.info('清理指纹识别库...');
                 try {
                     if (typeof this.lib.ZKFPM_Terminate === 'function') {
                         const ret = this.lib.ZKFPM_Terminate();
-                        console.log(`ZKFPM_Terminate() 返回: ${ret}`);
+                        this.logger.info(`ZKFPM_Terminate() 返回: ${ret}`);
                         if (ret === ZKFPErrorCode.OK) {
-                            console.log('指纹识别库已清理');
+                            this.logger.info('指纹识别库已清理');
                         } else {
-                            console.warn(`指纹识别库清理失败，错误码: ${ret}`);
+                            this.logger.warn(`指纹识别库清理失败，错误码: ${ret}`);
                         }
                     } else {
-                        console.warn('ZKFPM_Terminate 函数未绑定');
+                        this.logger.warn('ZKFPM_Terminate 函数未绑定');
                     }
                 } catch (error) {
-                    console.error('调用 ZKFPM_Terminate 失败:', error);
+                    this.logger.error('调用 ZKFPM_Terminate 失败:', error);
                 } finally {
                     this.isInitialized = false;
                 }
             }
 
-            console.log('所有资源清理完成');
+            this.logger.info('所有资源清理完成');
         } catch (error) {
-            console.error('清理资源时发生错误:', error);
+            this.logger.error('清理资源时发生错误:', error);
         }
     }
 
@@ -849,6 +852,6 @@ export class ZKFPLoader {
 /**
  * 创建 ZKFPLoader 实例
  */
-export function createZKFPLoader(dllName?: string): ZKFPLoader {
-    return new ZKFPLoader(dllName);
+export function createZKFPLoader(dllName?: string, logger?: Logger): ZKFPLoader {
+    return new ZKFPLoader(dllName, logger);
 }

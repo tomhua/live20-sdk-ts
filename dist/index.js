@@ -17,12 +17,12 @@ function getDllBitness(dllPath) {
     const bytesRead = readSync(fd, buffer, 0, 1024, 0);
     closeSync(fd);
     if (bytesRead < 64) {
-      console.warn(`[ZKFPLoader] DLL \u6587\u4EF6\u592A\u5C0F\uFF0C\u65E0\u6CD5\u68C0\u67E5\u4F4D\u6570: ${dllPath}`);
+      this.logger.warn(`[ZKFPLoader] DLL \u6587\u4EF6\u592A\u5C0F\uFF0C\u65E0\u6CD5\u68C0\u67E5\u4F4D\u6570: ${dllPath}`);
       return 0;
     }
     const peHeaderOffset = buffer.readUInt32LE(60);
     if (peHeaderOffset === 0 || peHeaderOffset + 4 >= buffer.length) {
-      console.warn(`[ZKFPLoader] \u65E0\u6548\u7684 PE \u5934\u504F\u79FB: ${peHeaderOffset}`);
+      this.logger.warn(`[ZKFPLoader] \u65E0\u6548\u7684 PE \u5934\u504F\u79FB: ${peHeaderOffset}`);
       return 0;
     }
     const machineType = buffer.readUInt16LE(peHeaderOffset + 4);
@@ -30,17 +30,18 @@ function getDllBitness(dllPath) {
     if (machineType === 332) return 32;
     return 0;
   } catch (error) {
-    console.warn(`[ZKFPLoader] \u68C0\u67E5 DLL \u4F4D\u6570\u5931\u8D25 ${dllPath}:`, error);
+    this.logger.warn(`[ZKFPLoader] \u68C0\u67E5 DLL \u4F4D\u6570\u5931\u8D25 ${dllPath}:`, error);
     return 0;
   }
 }
 var ZKFPLoader = class {
-  constructor(dllName) {
+  constructor(dllName, logger) {
     this.lib = null;
     this.isInitialized = false;
     this.deviceHandle = null;
     this.dbCacheHandle = null;
     this.dllPaths = [];
+    this.logger = logger || console;
     this.dllPaths = this.resolveDllPaths(dllName);
   }
   /**
@@ -48,7 +49,7 @@ var ZKFPLoader = class {
    */
   resolveDllPaths(mainDllName) {
     const is64Bit = process.arch === "x64";
-    console.log(`[ZKFPLoader] Node.js \u67B6\u6784: ${process.arch}`);
+    this.logger.info(`[ZKFPLoader] Node.js \u67B6\u6784: ${process.arch}`);
     const paths = [];
     if (mainDllName) {
       if (mainDllName === "libzkfp.dll") {
@@ -56,7 +57,7 @@ var ZKFPLoader = class {
         if (this.fileExists(demoLibPath)) {
           const bitness = getDllBitness(demoLibPath);
           if (is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
-            console.log(`[ZKFPLoader] \u2705 \u4F7F\u7528 demotest \u76EE\u5F55\u4E0B\u7684 libzkfp.dll: ${demoLibPath} (${bitness}\u4F4D)`);
+            this.logger.info(`[ZKFPLoader] \u2705 \u4F7F\u7528 demotest \u76EE\u5F55\u4E0B\u7684 libzkfp.dll: ${demoLibPath} (${bitness}\u4F4D)`);
             paths.push(demoLibPath);
             return paths;
           }
@@ -71,14 +72,14 @@ var ZKFPLoader = class {
         if (this.fileExists(dllPath)) {
           const bitness = getDllBitness(dllPath);
           if (bitness === 0 || is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
-            console.log(`[ZKFPLoader] \u2705 \u627E\u5230\u6587\u4EF6: ${dllPath} (${bitness}\u4F4D)`);
+            this.logger.info(`[ZKFPLoader] \u2705 \u627E\u5230\u6587\u4EF6: ${dllPath} (${bitness}\u4F4D)`);
             paths.push(dllPath);
             break;
           }
         }
       }
       if (paths.length === 0) {
-        console.log(`[ZKFPLoader] \u274C \u672A\u627E\u5230\u5339\u914D\u67B6\u6784\u7684 ${mainDllName}`);
+        this.logger.info(`[ZKFPLoader] \u274C \u672A\u627E\u5230\u5339\u914D\u67B6\u6784\u7684 ${mainDllName}`);
       }
       return paths;
     }
@@ -97,10 +98,10 @@ var ZKFPLoader = class {
     const matchingDlls = dllInfo.filter((info) => is64Bit && info.bitness === 64 || !is64Bit && info.bitness === 32).map((info) => info.path);
     const otherDlls = dllInfo.filter((info) => !matchingDlls.includes(info.path)).map((info) => info.path);
     paths.push(...matchingDlls, ...otherDlls);
-    console.log(`[ZKFPLoader] \u627E\u5230 ${paths.length} \u4E2A DLL \u6587\u4EF6...`);
+    this.logger.info(`[ZKFPLoader] \u627E\u5230 ${paths.length} \u4E2A DLL \u6587\u4EF6...`);
     for (const dll of paths) {
       const bitness = getDllBitness(dll);
-      console.log(`[ZKFPLoader] \u2705 \u6DFB\u52A0: ${dll} (${bitness}\u4F4D)`);
+      this.logger.info(`[ZKFPLoader] \u2705 \u6DFB\u52A0: ${dll} (${bitness}\u4F4D)`);
     }
     return paths;
   }
@@ -128,7 +129,7 @@ var ZKFPLoader = class {
         }
       }
     } catch (err) {
-      console.warn(`[ZKFPLoader] \u26A0\uFE0F \u65E0\u6CD5\u8BFB\u53D6\u76EE\u5F55 ${dir}:`, err);
+      this.logger.warn(`[ZKFPLoader] \u26A0\uFE0F \u65E0\u6CD5\u8BFB\u53D6\u76EE\u5F55 ${dir}:`, err);
     }
     return dllFiles;
   }
@@ -142,35 +143,35 @@ var ZKFPLoader = class {
     const originalCwd = process.cwd();
     try {
       if (this.dllPaths.length === 0) {
-        console.warn("\u672A\u627E\u5230\u4EFB\u4F55 DLL \u6587\u4EF6\uFF0C\u5C06\u5C1D\u8BD5\u4F7F\u7528\u7CFB\u7EDF\u8DEF\u5F84\u52A0\u8F7D");
+        this.logger.warn("\u672A\u627E\u5230\u4EFB\u4F55 DLL \u6587\u4EF6\uFF0C\u5C06\u5C1D\u8BD5\u4F7F\u7528\u7CFB\u7EDF\u8DEF\u5F84\u52A0\u8F7D");
       }
       const is64Bit = process.arch === "x64";
-      console.log(`[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D ${this.dllPaths.length} \u4E2A DLL...`);
+      this.logger.info(`[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D ${this.dllPaths.length} \u4E2A DLL...`);
       for (const dllPath of this.dllPaths) {
         try {
           const bitness = getDllBitness(dllPath);
           if (is64Bit && bitness === 64 || !is64Bit && bitness === 32) {
             const dllDir = dirname(dllPath);
             const dllName = basename(dllPath);
-            console.log(`[ZKFPLoader] \u5207\u6362\u5230 DLL \u76EE\u5F55: ${dllDir}`);
+            this.logger.info(`[ZKFPLoader] \u5207\u6362\u5230 DLL \u76EE\u5F55: ${dllDir}`);
             chdir(dllDir);
-            console.log(`[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D: ${dllName} (${bitness}\u4F4D)`);
+            this.logger.info(`[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D: ${dllName} (${bitness}\u4F4D)`);
             const lib = koffi.load(dllName);
-            console.log(`[ZKFPLoader] \u2705 \u6210\u529F\u52A0\u8F7D: ${dllName} (${bitness}\u4F4D)`);
+            this.logger.info(`[ZKFPLoader] \u2705 \u6210\u529F\u52A0\u8F7D: ${dllName} (${bitness}\u4F4D)`);
             if (!this.lib) {
               this.lib = lib;
             }
             chdir(originalCwd);
           } else {
-            console.log(`[ZKFPLoader] \u26A0\uFE0F \u8DF3\u8FC7\u52A0\u8F7D: ${dllPath} (${bitness}\u4F4D\uFF0C\u4E0E\u7CFB\u7EDF\u67B6\u6784\u4E0D\u5339\u914D)`);
+            this.logger.info(`[ZKFPLoader] \u26A0\uFE0F \u8DF3\u8FC7\u52A0\u8F7D: ${dllPath} (${bitness}\u4F4D\uFF0C\u4E0E\u7CFB\u7EDF\u67B6\u6784\u4E0D\u5339\u914D)`);
           }
         } catch (err) {
-          console.warn(`[ZKFPLoader] \u26A0\uFE0F \u52A0\u8F7D\u5931\u8D25 ${dllPath}:`, err);
+          this.logger.warn(`[ZKFPLoader] \u26A0\uFE0F \u52A0\u8F7D\u5931\u8D25 ${dllPath}:`, err);
           chdir(originalCwd);
         }
       }
       if (!this.lib) {
-        console.log("[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D\u9ED8\u8BA4\u540D\u79F0: zkfinger12.dll");
+        this.logger.info("[ZKFPLoader] \u5C1D\u8BD5\u52A0\u8F7D\u9ED8\u8BA4\u540D\u79F0: zkfinger12.dll");
         try {
           chdir(join(process.cwd(), "src", "dll", is64Bit ? "x64" : "x86"));
           this.lib = koffi.load("zkfinger12.dll");
@@ -180,27 +181,27 @@ var ZKFPLoader = class {
           this.lib = koffi.load("zkfinger12.dll");
         }
       }
-      console.log("[ZKFPLoader] DLL \u52A0\u8F7D\u5B8C\u6210\uFF0C\u5F00\u59CB\u7ED1\u5B9A\u51FD\u6570...");
+      this.logger.info("[ZKFPLoader] DLL \u52A0\u8F7D\u5B8C\u6210\uFF0C\u5F00\u59CB\u7ED1\u5B9A\u51FD\u6570...");
       this.bindFunctions();
-      console.log("[ZKFPLoader] \u8C03\u7528 ZKFPM_Init...");
+      this.logger.info("[ZKFPLoader] \u8C03\u7528 ZKFPM_Init...");
       try {
         const result = this.lib.ZKFPM_Init();
         if (result === 0 /* OK */) {
           this.isInitialized = true;
-          console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u6210\u529F");
+          this.logger.info("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u6210\u529F");
           return true;
         } else {
-          console.warn(`[ZKFPLoader] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u9519\u8BEF\u7801: ${result}\uFF0C\u4F46\u7EE7\u7EED\u6267\u884C`);
+          this.logger.warn(`[ZKFPLoader] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u9519\u8BEF\u7801: ${result}\uFF0C\u4F46\u7EE7\u7EED\u6267\u884C`);
           this.isInitialized = true;
           return true;
         }
       } catch (error) {
-        console.warn("[ZKFPLoader] \u521D\u59CB\u5316\u8FC7\u7A0B\u4E2D\u53D1\u751F\u9519\u8BEF:", error, "\uFF0C\u4F46\u7EE7\u7EED\u6267\u884C");
+        this.logger.warn("[ZKFPLoader] \u521D\u59CB\u5316\u8FC7\u7A0B\u4E2D\u53D1\u751F\u9519\u8BEF:", error, "\uFF0C\u4F46\u7EE7\u7EED\u6267\u884C");
         this.isInitialized = true;
         return true;
       }
     } catch (error) {
-      console.error("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u5931\u8D25:", error);
+      this.logger.error("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u5931\u8D25:", error);
       return false;
     }
   }
@@ -248,7 +249,7 @@ var ZKFPLoader = class {
       this.lib.ZKFPM_GetCaptureParams = this.lib.func("int __stdcall ZKFPM_GetCaptureParams(void*, void*)");
       this.lib.ZKFPM_GetCaptureParamsEx = this.lib.func("int __stdcall ZKFPM_GetCaptureParamsEx(void*, int*, int*, int*)");
     } catch (err) {
-      console.error("\u7ED1\u5B9A\u51FD\u6570\u5931\u8D25:", err);
+      this.logger.error("\u7ED1\u5B9A\u51FD\u6570\u5931\u8D25:", err);
       throw err;
     }
   }
@@ -627,48 +628,48 @@ var ZKFPLoader = class {
    */
   terminate() {
     try {
-      console.log("\u5F00\u59CB\u6E05\u7406\u8D44\u6E90...");
+      this.logger.info("\u5F00\u59CB\u6E05\u7406\u8D44\u6E90...");
       if (this.dbCacheHandle) {
-        console.log("\u5173\u95ED\u6570\u636E\u5E93...");
+        this.logger.info("\u5173\u95ED\u6570\u636E\u5E93...");
         try {
           const ret = this.closeDBCache();
-          console.log(`\u6570\u636E\u5E93\u5173\u95ED\u7ED3\u679C: ${ret}`);
+          this.logger.info(`\u6570\u636E\u5E93\u5173\u95ED\u7ED3\u679C: ${ret}`);
         } catch (error) {
-          console.error("\u5173\u95ED\u6570\u636E\u5E93\u5931\u8D25:", error);
+          this.logger.error("\u5173\u95ED\u6570\u636E\u5E93\u5931\u8D25:", error);
         }
       }
       if (this.deviceHandle) {
-        console.log("\u5173\u95ED\u8BBE\u5907...");
+        this.logger.info("\u5173\u95ED\u8BBE\u5907...");
         try {
           const ret = this.closeDevice();
-          console.log(`\u8BBE\u5907\u5173\u95ED\u7ED3\u679C: ${ret}`);
+          this.logger.info(`\u8BBE\u5907\u5173\u95ED\u7ED3\u679C: ${ret}`);
         } catch (error) {
-          console.error("\u5173\u95ED\u8BBE\u5907\u5931\u8D25:", error);
+          this.logger.error("\u5173\u95ED\u8BBE\u5907\u5931\u8D25:", error);
         }
       }
       if (this.isInitialized && this.lib) {
-        console.log("\u6E05\u7406\u6307\u7EB9\u8BC6\u522B\u5E93...");
+        this.logger.info("\u6E05\u7406\u6307\u7EB9\u8BC6\u522B\u5E93...");
         try {
           if (typeof this.lib.ZKFPM_Terminate === "function") {
             const ret = this.lib.ZKFPM_Terminate();
-            console.log(`ZKFPM_Terminate() \u8FD4\u56DE: ${ret}`);
+            this.logger.info(`ZKFPM_Terminate() \u8FD4\u56DE: ${ret}`);
             if (ret === 0 /* OK */) {
-              console.log("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u6E05\u7406");
+              this.logger.info("\u6307\u7EB9\u8BC6\u522B\u5E93\u5DF2\u6E05\u7406");
             } else {
-              console.warn(`\u6307\u7EB9\u8BC6\u522B\u5E93\u6E05\u7406\u5931\u8D25\uFF0C\u9519\u8BEF\u7801: ${ret}`);
+              this.logger.warn(`\u6307\u7EB9\u8BC6\u522B\u5E93\u6E05\u7406\u5931\u8D25\uFF0C\u9519\u8BEF\u7801: ${ret}`);
             }
           } else {
-            console.warn("ZKFPM_Terminate \u51FD\u6570\u672A\u7ED1\u5B9A");
+            this.logger.warn("ZKFPM_Terminate \u51FD\u6570\u672A\u7ED1\u5B9A");
           }
         } catch (error) {
-          console.error("\u8C03\u7528 ZKFPM_Terminate \u5931\u8D25:", error);
+          this.logger.error("\u8C03\u7528 ZKFPM_Terminate \u5931\u8D25:", error);
         } finally {
           this.isInitialized = false;
         }
       }
-      console.log("\u6240\u6709\u8D44\u6E90\u6E05\u7406\u5B8C\u6210");
+      this.logger.info("\u6240\u6709\u8D44\u6E90\u6E05\u7406\u5B8C\u6210");
     } catch (error) {
-      console.error("\u6E05\u7406\u8D44\u6E90\u65F6\u53D1\u751F\u9519\u8BEF:", error);
+      this.logger.error("\u6E05\u7406\u8D44\u6E90\u65F6\u53D1\u751F\u9519\u8BEF:", error);
     }
   }
   /**
@@ -698,15 +699,16 @@ var ZKFPLoader = class {
     }
   }
 };
-function createZKFPLoader(dllName) {
-  return new ZKFPLoader(dllName);
+function createZKFPLoader(dllName, logger) {
+  return new ZKFPLoader(dllName, logger);
 }
 
 // src/index.ts
 var Live20SDK = class {
-  constructor(dllName) {
+  constructor(dllName, logger) {
     this.isInitialized = false;
-    this.loader = createZKFPLoader(dllName);
+    this.logger = logger || console;
+    this.loader = createZKFPLoader(dllName, this.logger);
   }
   /**
    * 初始化指纹识别库
@@ -716,7 +718,7 @@ var Live20SDK = class {
       this.isInitialized = this.loader.initialize();
       return this.isInitialized;
     } catch (error) {
-      console.error("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u5931\u8D25:", error);
+      this.logger.error("\u6307\u7EB9\u8BC6\u522B\u5E93\u521D\u59CB\u5316\u5931\u8D25:", error);
       return false;
     }
   }

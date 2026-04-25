@@ -48,6 +48,12 @@ interface ZKFPIdentifyResult {
     /** 是否识别成功 */
     success: boolean;
 }
+interface Logger {
+    debug(...args: any[]): void;
+    info(...args: any[]): void;
+    error(...args: any[]): void;
+    warn(...args: any[]): void;
+}
 /**
  * 指纹识别错误码枚举
  * 定义了SDK操作可能返回的各种错误状态
@@ -160,7 +166,8 @@ declare const FP_MTHRESHOLD_CODE = 2;
 declare class Live20SDK {
     private loader;
     private isInitialized;
-    constructor(dllName?: string);
+    private logger;
+    constructor(dllName?: string, logger?: Logger);
     /**
      * 初始化指纹识别库
      */

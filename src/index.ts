@@ -9,7 +9,7 @@ import {
     ZKFPDeviceParam,
     MAX_TEMPLATE_SIZE,
     FP_THRESHOLD_CODE,
-    FP_MTHRESHOLD_CODE
+    FP_MTHRESHOLD_CODE, Logger
 } from './types/zkfp-types'
 
 /**
@@ -18,9 +18,11 @@ import {
 export class Live20SDK {
     private loader: ZKFPLoader;
     private isInitialized = false;
+    private logger: Logger;
 
-    constructor(dllName?: string) {
-        this.loader = createZKFPLoader(dllName);
+    constructor(dllName?: string, logger?: Logger) {
+        this.logger = logger || console;
+        this.loader = createZKFPLoader(dllName, this.logger);
     }
 
     /**
@@ -31,7 +33,7 @@ export class Live20SDK {
             this.isInitialized = this.loader.initialize();
             return this.isInitialized;
         } catch (error) {
-            console.error('指纹识别库初始化失败:', error);
+            this.logger.error('指纹识别库初始化失败:', error);
             return false;
         }
     }

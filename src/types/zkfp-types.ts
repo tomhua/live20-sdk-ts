@@ -65,6 +65,13 @@ export interface ZKFPIdentifyResult {
     success: boolean;
 }
 
+export interface Logger {
+    debug(...args: any[]): void;
+    info(...args: any[]): void;
+    error(...args: any[]): void;
+    warn(...args: any[]): void;
+}
+
 /**
  * 指纹识别错误码枚举
  * 定义了SDK操作可能返回的各种错误状态

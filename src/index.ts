@@ -271,8 +271,8 @@ export class Live20SDK {
 /**
  * 创建指纹识别 SDK 实例
  */
-export function createLive20SDK(dllName?: string): Live20SDK {
-    return new Live20SDK(dllName);
+export function createLive20SDK(dllName?: string, logger?: Logger): Live20SDK {
+    return new Live20SDK(dllName, logger);
 }
 
 /**

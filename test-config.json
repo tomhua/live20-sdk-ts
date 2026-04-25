@@ -1,0 +1,51 @@
+{
+  "testConfig": {
+    "deviceIndex": 0,
+    "fingerprintIds": [1001, 1002, 1003, 1004, 1005],
+    "matchThreshold": 50,
+    "securityLevel": 3,
+    "timeoutMs": 30000,
+    "maxRetries": 3,
+    "enableMockMode": true,
+    "mockTemplateSize": {
+      "min": 300,
+      "max": 500
+    },
+    "performance": {
+      "templateCount": 10,
+      "batchSize": 5
+    }
+  },
+  "testScenarios": [
+    {
+      "name": "基础功能测试",
+      "description": "测试库的初始化和基本功能",
+      "enabled": true
+    },
+    {
+      "name": "设备操作测试",
+      "description": "测试设备的打开、关闭和指纹采集",
+      "enabled": true
+    },
+    {
+      "name": "数据库操作测试",
+      "description": "测试指纹数据库的增删改查功能",
+      "enabled": true
+    },
+    {
+      "name": "参数设置测试",
+      "description": "测试安全级别和匹配阈值的设置",
+      "enabled": true
+    },
+    {
+      "name": "性能测试",
+      "description": "测试库的性能表现",
+      "enabled": true
+    },
+    {
+      "name": "错误处理测试",
+      "description": "测试异常情况的处理",
+      "enabled": true
+    }
+  ]
+}

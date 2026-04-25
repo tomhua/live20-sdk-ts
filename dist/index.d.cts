@@ -284,6 +284,6 @@ declare class Live20SDK {
 /**
  * 创建指纹识别 SDK 实例
  */
-declare function createLive20SDK(dllName?: string): Live20SDK;
+declare function createLive20SDK(dllName?: string, logger?: Logger): Live20SDK;
 
 export { FP_MTHRESHOLD_CODE, FP_THRESHOLD_CODE, Live20SDK, MAX_TEMPLATE_SIZE, type ZKFPCapParams, ZKFPDBParamCode, ZKFPDeviceParam, ZKFPErrorCode, type ZKFPFingerprintTemplate, type ZKFPIdentifyResult, type ZKFPImageData, createLive20SDK, createLive20SDK as default };

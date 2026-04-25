@@ -915,8 +915,8 @@ var Live20SDK = class {
     }
   }
 };
-function createLive20SDK(dllName) {
-  return new Live20SDK(dllName);
+function createLive20SDK(dllName, logger) {
+  return new Live20SDK(dllName, logger);
 }
 var index_default = createLive20SDK;
 export {

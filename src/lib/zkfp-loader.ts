@@ -1,18 +1,19 @@
 import koffi from 'koffi'
-import {join, dirname, basename} from 'path'
-import {accessSync, constants, readdirSync, openSync, readSync, closeSync} from 'fs'
+import {basename, dirname, join} from 'path'
+import {fileURLToPath} from 'url';
+import {closeSync, openSync, readdirSync, readSync} from 'fs'
 import {chdir} from 'process'
 import {
-    ZKFPErrorCode,
-    ZKFPHandle,
-    ZKFPFingerprintTemplate,
-    ZKFPImageData,
-    ZKFPIdentifyResult,
+    Logger,
+    MAX_TEMPLATE_SIZE,
     ZKFPCapParams,
     ZKFPDBParamCode,
     ZKFPDeviceParam,
-    MAX_TEMPLATE_SIZE,
-    Logger
+    ZKFPErrorCode,
+    ZKFPFingerprintTemplate,
+    ZKFPHandle,
+    ZKFPIdentifyResult,
+    ZKFPImageData
 } from '../types/zkfp-types'
 
 
@@ -82,9 +83,19 @@ export class ZKFPLoader {
         const paths: string[] = [];
 
         // 扫描所有 DLL 目录
+        let srcDir: string;
+        try {
+            // 尝试 ESM 方式
+            const __dirname = dirname(fileURLToPath(import.meta.url));
+            srcDir = dirname(__dirname); // 上一级目录，即 src 目录
+        } catch (e) {
+            // 回退到 CJS 方式
+            const currentDir = dirname(__filename);
+            srcDir = dirname(currentDir); // 上一级目录，即 src 目录
+        }
         const dllDirs = [
-            join(process.cwd(), 'src', 'dll', 'x64'),
-            join(process.cwd(), 'src', 'dll', 'x86')
+            join(srcDir, 'dll', 'x64'),
+            join(srcDir, 'dll', 'x86')
         ];
 
         let allDllFiles: string[] = [];
@@ -270,6 +281,7 @@ export class ZKFPLoader {
             this.lib.ZKFPM_DBCount = this.lib.func('int __stdcall ZKFPM_DBCount(void*, uint*)');
 
             this.lib.ZKFPM_Identify = this.lib.func('int __stdcall ZKFPM_Identify(void*, uint8*, uint, uint*, uint*)');
+            // new identify function
             this.lib.ZKFPM_DBIdentify = this.lib.func('int __stdcall ZKFPM_DBIdentify(void*, uint8*, uint, uint*, uint*)');
 
             this.lib.ZKFPM_MatchFinger = this.lib.func('int __stdcall ZKFPM_MatchFinger(void*, uint8*, uint, uint8*, uint)');
@@ -307,7 +319,7 @@ export class ZKFPLoader {
         this.ensureInitialized();
 
         const handle = this.lib.ZKFPM_OpenDevice(deviceIndex);
-        if (handle && handle !== null) {
+        if (handle) {
             this.deviceHandle = handle;
             return true;
         }
@@ -334,6 +346,7 @@ export class ZKFPLoader {
      */
     public setDeviceParam(paramCode: ZKFPDeviceParam, value: Uint8Array): boolean {
         this.ensureDeviceOpened();
+
         const result = this.lib.ZKFPM_SetParameters(
             this.deviceHandle,
             paramCode,
@@ -345,6 +358,9 @@ export class ZKFPLoader {
 
     /**
      * 获取设备参数
+     * @param paramCode 参数码
+     * @param bufferSize 缓冲区大小，默认1024
+     * @returns 参数值，或失败时返回 null
      */
     public getDeviceParam(paramCode: ZKFPDeviceParam, bufferSize: number = 1024): Uint8Array | null {
         this.ensureDeviceOpened();
@@ -365,28 +381,40 @@ export class ZKFPLoader {
 
     /**
      * 采集指纹（获取图像+模板）
+     * @returns 提取到的指纹模板，或失败时返回 null
      */
     public acquireFingerprint(): ZKFPFingerprintTemplate | null {
         this.ensureDeviceOpened();
 
+        const params = this.getCaptureParams();
+        if (!params || params.imgWidth === 0 || params.imgHeight === 0) {
+            this.logger.warn('无法获取采集参数');
+            return null;
+        }
+
+        const requiredSize = params.imgWidth * params.imgHeight;
+        //指纹图像
+        const imageBuffer = Buffer.alloc(requiredSize);
+        //指纹模板
         const templateBuffer = Buffer.alloc(MAX_TEMPLATE_SIZE);
-        const imageBuffer = Buffer.alloc(1024 * 1024);
+        //指纹模板长度，先设置为缓冲区大小
         const sizeBuffer = Buffer.alloc(4);
+        sizeBuffer.writeUInt32LE(MAX_TEMPLATE_SIZE, 0);
 
         const result = this.lib.ZKFPM_AcquireFingerprint(
             this.deviceHandle,
             imageBuffer,
-            imageBuffer.length,
+            requiredSize,
             templateBuffer,
             sizeBuffer
         );
-
+        this.logger.info(`采集指纹结果：${result}`);
         if (result === ZKFPErrorCode.OK) {
             const size = sizeBuffer.readUInt32LE(0);
             return {
                 data: new Uint8Array(templateBuffer.slice(0, size)),
                 size: size,
-                quality: this.calculateTemplateQuality(templateBuffer, size)
+                quality: this.calculateTemplateQuality(size)
             };
         }
         return null;
@@ -394,6 +422,7 @@ export class ZKFPLoader {
 
     /**
      * 采集指纹图像
+     * @returns 提取到的指纹图像，或失败时返回 null
      */
     public acquireFingerprintImage(): ZKFPImageData | null {
         this.ensureDeviceOpened();
@@ -426,8 +455,10 @@ export class ZKFPLoader {
 
     /**
      * 计算模板质量
+     * @param size 模板大小
+     * @returns 模板质量，0-100之间
      */
-    private calculateTemplateQuality(_buffer: Buffer, size: number): number {
+    private calculateTemplateQuality(size: number): number {
         if (size < 100) return 0;
         if (size > 500) return 100;
         return Math.min(100, Math.floor((size - 100) / 4));
@@ -541,6 +572,8 @@ export class ZKFPLoader {
 
     /**
      * 识别指纹（1:N）
+     * @param template 指纹模板
+     * @returns 识别结果
      */
     public identifyFingerprint(template: ZKFPFingerprintTemplate): ZKFPIdentifyResult {
         this.ensureDBCacheCreated();
@@ -554,48 +587,57 @@ export class ZKFPLoader {
             fidBuffer,
             scoreBuffer
         );
-
+        this.logger.debug(`identifyFingerprint success fid: ${fidBuffer.readUInt32LE(0)}, score: ${scoreBuffer.readUInt32LE(0)}`);
         return {
             fid: fidBuffer.readUInt32LE(0),
-            score: scoreBuffer.readUInt32LE(0),
+            score: this.calculateTemplateQuality(scoreBuffer.readUInt32LE(0)),
             success: result === ZKFPErrorCode.OK
         };
     }
 
     /**
      * 比对两个指纹模板（1:1）
+     * @param template1 第一个指纹模板
+     * @param template2 第二个指纹模板
      */
     public matchTemplates(
         template1: ZKFPFingerprintTemplate,
         template2: ZKFPFingerprintTemplate
     ): number {
         this.ensureDBCacheCreated();
-        const result = this.lib.ZKFPM_MatchFinger(
+        return this.lib.ZKFPM_MatchFinger(
             this.dbCacheHandle,
             template1.data,
             template1.size,
             template2.data,
             template2.size
         );
-        return result;
     }
 
     /**
      * 按ID验证指纹
+     * @param fid 指纹ID
+     * @param template 指纹模板
+     * @returns 验证结果
      */
     public verifyByID(fid: number, template: ZKFPFingerprintTemplate): number {
         this.ensureDBCacheCreated();
-        const result = this.lib.ZKFPM_VerifyByID(
+        const score = this.lib.ZKFPM_VerifyByID(
             this.dbCacheHandle,
             fid,
             template.data,
             template.size
         );
-        return result;
+        this.logger.debug(`verifyByID success score: ${score}`);
+        return this.calculateTemplateQuality(score);
     }
 
     /**
      * 合并3个指纹模板为登记模板
+     * @param temp1 第一个指纹模板
+     * @param temp2 第二个指纹模板
+     * @param temp3 第三个指纹模板
+     * @returns 合并后的指纹登记模板，或失败时返回 null
      */
     public genRegTemplate(
         temp1: ZKFPFingerprintTemplate,
@@ -605,6 +647,7 @@ export class ZKFPLoader {
         this.ensureDBCacheCreated();
         const regTemplate = Buffer.alloc(MAX_TEMPLATE_SIZE);
         const sizeBuffer = Buffer.alloc(4);
+        sizeBuffer.writeUInt32LE(MAX_TEMPLATE_SIZE, 0);
 
         const result = this.lib.ZKFPM_GenRegTemplate(
             this.dbCacheHandle,
@@ -620,7 +663,7 @@ export class ZKFPLoader {
             return {
                 data: new Uint8Array(regTemplate.slice(0, size)),
                 size: size,
-                quality: this.calculateTemplateQuality(regTemplate, size)
+                quality: this.calculateTemplateQuality(size)
             };
         }
         return null;
@@ -628,11 +671,15 @@ export class ZKFPLoader {
 
     /**
      * 从 BMP 图像提取指纹模板
+     * @param filePath 图像文件路径
+     * @param dpi 图像分辨率，默认500
+     * @returns 提取到的指纹模板，或失败时返回 null
      */
     public extractFromImage(filePath: string, dpi: number = 500): ZKFPFingerprintTemplate | null {
         this.ensureDBCacheCreated();
         const templateBuffer = Buffer.alloc(MAX_TEMPLATE_SIZE);
         const sizeBuffer = Buffer.alloc(4);
+        sizeBuffer.writeUInt32LE(MAX_TEMPLATE_SIZE, 0);
 
         const result = this.lib.ZKFPM_ExtractFromImage(
             this.dbCacheHandle,
@@ -647,7 +694,7 @@ export class ZKFPLoader {
             return {
                 data: new Uint8Array(templateBuffer.slice(0, size)),
                 size: size,
-                quality: this.calculateTemplateQuality(templateBuffer, size)
+                quality: this.calculateTemplateQuality(size)
             };
         }
         return null;
@@ -662,7 +709,7 @@ export class ZKFPLoader {
 
         const imageData = this.lib.ZKFPM_GetLastExtractImage(widthBuffer, heightBuffer);
 
-        if (imageData && imageData !== null) {
+        if (imageData) {
             const width = widthBuffer.readInt32LE(0);
             const height = heightBuffer.readInt32LE(0);
             const data = Buffer.from(imageData);

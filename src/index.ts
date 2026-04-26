@@ -18,7 +18,7 @@ import {
 export class Live20SDK {
     private loader: ZKFPLoader;
     private isInitialized = false;
-    private logger: Logger;
+    private readonly logger: Logger;
 
     constructor(logger?: Logger) {
         this.logger = logger || console;
@@ -48,6 +48,7 @@ export class Live20SDK {
 
     /**
      * 打开设备
+     * @param deviceIndex 设备索引，默认0
      */
     public openDevice(deviceIndex: number = 0): boolean {
         this.ensureInitialized();
@@ -70,6 +71,8 @@ export class Live20SDK {
 
     /**
      * 设置设备参数
+     * @param paramCode 参数码
+     * @param value 参数值
      */
     public setDeviceParam(paramCode: ZKFPDeviceParam, value: Uint8Array): boolean {
         return this.loader.setDeviceParam(paramCode, value);
@@ -77,13 +80,16 @@ export class Live20SDK {
 
     /**
      * 获取设备参数
+     * @param paramCode 参数码
+     * @param bufferSize 缓冲区大小，默认1024
      */
     public getDeviceParam(paramCode: ZKFPDeviceParam, bufferSize?: number): Uint8Array | null {
         return this.loader.getDeviceParam(paramCode, bufferSize);
     }
 
     /**
-     * 采集指纹
+     * 采集指纹模板
+     * @returns 提取到的指纹模板，或失败时返回 null
      */
     public acquireFingerprint(): ZKFPFingerprintTemplate | null {
         this.ensureInitialized();
@@ -115,6 +121,8 @@ export class Live20SDK {
 
     /**
      * 添加指纹模板到数据库
+     * @param fid 指纹id
+     * @param template 指纹模板
      */
     public addFingerprint(fid: number, template: ZKFPFingerprintTemplate): boolean {
         this.ensureInitialized();
@@ -123,6 +131,7 @@ export class Live20SDK {
 
     /**
      * 从数据库删除指纹模板
+     * @param fid 指纹id
      */
     public deleteFingerprint(fid: number): boolean {
         this.ensureInitialized();
@@ -147,6 +156,7 @@ export class Live20SDK {
 
     /**
      * 设置识别参数
+     * @param level 安全等级，默认0-3
      */
     public setSecurityLevel(level: number): boolean {
         this.ensureInitialized();
@@ -155,6 +165,7 @@ export class Live20SDK {
 
     /**
      * 设置匹配阈值
+     * @param threshold 匹配阈值，默认50-100
      */
     public setMatchThreshold(threshold: number): boolean {
         this.ensureInitialized();
@@ -163,6 +174,7 @@ export class Live20SDK {
 
     /**
      * 获取数据库参数
+     * @param paramCode 参数码
      */
     public getDBParam(paramCode: ZKFPDBParamCode): number {
         this.ensureInitialized();
@@ -170,7 +182,8 @@ export class Live20SDK {
     }
 
     /**
-     * 识别指纹
+     * 识别指纹模板
+     * @param template 指纹模板
      */
     public identifyFingerprint(template: ZKFPFingerprintTemplate): ZKFPIdentifyResult {
         this.ensureInitialized();
@@ -179,6 +192,9 @@ export class Live20SDK {
 
     /**
      * 验证两个指纹是否匹配
+     * @param template1 指纹模板1
+     * @param template2 指纹模板2
+     * @param threshold 基础分数，默认50-1000
      */
     public verifyFingerprints(
         template1: ZKFPFingerprintTemplate,
@@ -191,7 +207,10 @@ export class Live20SDK {
     }
 
     /**
-     * 按ID验证指纹
+     * 按ID验证指纹模板
+     * @param fid 指纹id
+     * @param template 指纹模板
+     * @param threshold 基础分数，默认50-100
      */
     public verifyByID(fid: number, template: ZKFPFingerprintTemplate, threshold: number = 50): boolean {
         this.ensureInitialized();
@@ -201,6 +220,9 @@ export class Live20SDK {
 
     /**
      * 合并指纹模板
+     * @param temp1 指纹模板1
+     * @param temp2 指纹模板2
+     * @param temp3 指纹模板3
      */
     public mergeTemplates(
         temp1: ZKFPFingerprintTemplate,
@@ -212,7 +234,10 @@ export class Live20SDK {
     }
 
     /**
-     * 从图像提取指纹
+     * 从图像提取指纹模板
+     * @param filePath 图像文件路径
+     * @param dpi 图像分辨率，默认500
+     * @returns �取到的指纹模板，或失败时返回 null
      */
     public extractFromImage(filePath: string, dpi?: number): ZKFPFingerprintTemplate | null {
         this.ensureInitialized();

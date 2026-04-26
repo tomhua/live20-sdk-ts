@@ -108,8 +108,8 @@ var ZKFPLoader = class {
       srcDir = (0, import_path.dirname)(currentDir);
     }
     const dllDirs = [
-      (0, import_path.join)(srcDir, "dll", "x64"),
-      (0, import_path.join)(srcDir, "dll", "x86")
+      (0, import_path.join)(srcDir, "src", "dll", "x64"),
+      (0, import_path.join)(srcDir, "src", "dll", "x86")
     ];
     let allDllFiles = [];
     for (const dllDir of dllDirs) {

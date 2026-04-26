@@ -94,8 +94,8 @@ export class ZKFPLoader {
             srcDir = dirname(currentDir); // 上一级目录，即 src 目录
         }
         const dllDirs = [
-            join(srcDir, 'dll', 'x64'),
-            join(srcDir, 'dll', 'x86')
+            join(srcDir, 'src', 'dll', 'x64'),
+            join(srcDir, 'src', 'dll', 'x86')
         ];
 
         let allDllFiles: string[] = [];

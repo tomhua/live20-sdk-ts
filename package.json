@@ -17,7 +17,8 @@
     "test:ts": "tsx test/sample.ts",
     "test:tsx": "tsx test/sample.ts",
     "test:debug": "npm run build && tsx --inspect test/sample.ts",
-    "pretest": "npm run build"
+    "pretest": "npm run build",
+    "prepare": "tsup"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +33,8 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "koffi": "^2.16.1"
+    "koffi": "^2.16.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
   }
 }
